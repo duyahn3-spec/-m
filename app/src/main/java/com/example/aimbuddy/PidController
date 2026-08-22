@@ -1,0 +1,38 @@
+class PidController(
+    private val kp: Float = 0.75f,
+    private val ki: Float = 0.001f,
+    private val kd: Float = 0.28f,
+    private val maxSpeed: Float = 250f,
+    private val deadzone: Float = 3f
+) {
+    private var integralX = 0f
+    private var integralY = 0f
+    private var lastErrorX = 0f
+    private var lastErrorY = 0f
+
+    fun compute(errorX: Float, errorY: Float): Pair<Int, Int> {
+        if (Math.abs(errorX) < deadzone) integralX = 0f
+        if (Math.abs(errorY) < deadzone) integralY = 0f
+
+        integralX += errorX
+        integralY += errorY
+
+        val derivativeX = errorX - lastErrorX
+        val derivativeY = errorY - lastErrorY
+
+        var outputX = kp * errorX + ki * integralX + kd * derivativeX
+        var outputY = kp * errorY + ki * integralY + kd * derivativeY
+
+        lastErrorX = errorX
+        lastErrorY = errorY
+
+        if (Math.abs(errorX) < deadzone) outputX = 0f
+        if (Math.abs(errorY) < deadzone) outputY = 0f
+
+        // Clamp to maxSpeed
+        outputX = outputX.coerceIn(-maxSpeed, maxSpeed)
+        outputY = outputY.coerceIn(-maxSpeed, maxSpeed)
+
+        return Pair(outputX.toInt(), outputY.toInt())
+    }
+}
