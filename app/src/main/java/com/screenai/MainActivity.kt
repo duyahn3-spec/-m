@@ -2,433 +2,177 @@ package com.screenai
 
 import android.Manifest
 import android.app.Activity
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.media.ImageReader
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
-import androidx.core.app.ActivityCompat
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 
-class MainActivity :
-    Activity(),
-    ScreenCaptureManager.Listener,
-    BleManager.Listener {
+class MainActivity : AppCompatActivity() {
 
-    private lateinit var capture:
-        ScreenCaptureManager
+    private lateinit var toggleButton: Button
+    private lateinit var statusText: TextView
 
-    private lateinit var ble:
-        BleManager
+    private val projectionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
 
-    private lateinit var engine:
-        TFLiteEngine
+            if (result.resultCode != Activity.RESULT_OK || result.data == null) {
+                setOff("Screen capture permission denied")
+                return@registerForActivityResult
+            }
 
-    private lateinit var status:
-        TextView
+            startCapture(result.data!!)
+        }
 
-    private var frameCount = 0L
+    private val permissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) {
+            requestProjection()
+        }
 
-    private var lastFpsTime = 0L
-
-    private var fps = 0
-
-    override fun onCreate(
-        savedInstanceState: Bundle?
-    ) {
-
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        engine = TFLiteEngine(this)
-
-        capture =
-            ScreenCaptureManager(this)
-
-        capture.listener = this
-
-        ble =
-            BleManager(this)
-
-        ble.listener = this
-
-        requestBlePermissions()
-
-        buildUi()
+        createUi()
     }
 
-    private fun buildUi() {
+    private fun createUi() {
 
-        val root =
-            LinearLayout(this).apply {
+        statusText = TextView(this).apply {
+            text = "OFF"
+            textSize = 18f
+            setPadding(32, 32, 32, 16)
+        }
 
-                orientation =
-                    LinearLayout.VERTICAL
+        toggleButton = Button(this).apply {
+            text = "OFF"
+            textSize = 20f
 
-                setPadding(
-                    24,
-                    24,
-                    24,
-                    24
-                )
+            setOnClickListener {
 
-                setBackgroundColor(
-                    Color.BLACK
-                )
-            }
-
-        val title =
-            TextView(this).apply {
-
-                text =
-                    "Screen AI Research"
-
-                textSize = 24f
-
-                gravity =
-                    Gravity.CENTER
-
-                setTextColor(
-                    Color.WHITE
-                )
-            }
-
-        val inspect =
-            Button(this).apply {
-
-                text =
-                    "1. Kiểm tra TFLite"
-
-                setOnClickListener {
-
-                    status.text =
-                        engine.describe()
+                if (text.toString() == "OFF") {
+                    turnOn()
+                } else {
+                    turnOff()
                 }
             }
+        }
 
-        val captureButton =
-            Button(this).apply {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 64, 32, 32)
 
-                text =
-                    "2. Screen Capture"
-
-                setOnClickListener {
-
-                    capture.requestPermission()
-                }
-            }
-
-        val scan =
-            Button(this).apply {
-
-                text =
-                    "3. Tìm ESP32 BLE"
-
-                setOnClickListener {
-
-                    scanForEsp32()
-                }
-            }
-
-        val send =
-            Button(this).apply {
-
-                text =
-                    "4. Gửi telemetry test"
-
-                setOnClickListener {
-
-                    val telemetry =
-                        Telemetry(
-                            x = 120,
-                            y = 80,
-                            dx = -3,
-                            dy = 2,
-                            confidence = 0.95f,
-                            timestamp =
-                                System.currentTimeMillis()
-                        )
-
-                    ble.send(
-                        telemetry.encode()
-                    )
-                }
-            }
-
-        status =
-            TextView(this).apply {
-
-                textSize = 14f
-
-                setTextColor(
-                    Color.WHITE
+            addView(
+                statusText,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 )
-
-                text =
-                    "READY\n"
-            }
-
-        root.addView(title)
-        root.addView(inspect)
-        root.addView(captureButton)
-        root.addView(scan)
-        root.addView(send)
-
-        val scroll =
-            ScrollView(this)
-
-        scroll.addView(status)
-
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(
-                -1,
-                0,
-                1f
             )
-        )
 
-        setContentView(root)
+            addView(
+                toggleButton,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    100
+                )
+            )
+        }
+
+        setContentView(layout)
     }
 
-    override fun onFrame(
-        reader: ImageReader
-    ) {
+    private fun turnOn() {
 
-        val image =
-            reader.acquireLatestImage()
-                ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 
-        try {
-
-            frameCount++
-
-            val now =
-                System.currentTimeMillis()
+            val permissions = mutableListOf<String>()
 
             if (
-                lastFpsTime == 0L
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH_SCAN
+                ) != PackageManager.PERMISSION_GRANTED
             ) {
-                lastFpsTime = now
+                permissions.add(Manifest.permission.BLUETOOTH_SCAN)
             }
 
             if (
-                now - lastFpsTime >= 1000
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
             ) {
-
-                fps =
-                    frameCount.toInt()
-
-                frameCount = 0
-
-                lastFpsTime = now
+                permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
             }
 
-            runOnUiThread {
-
-                status.text =
-                    "SCREEN CAPTURE\n" +
-                    "FPS: $fps\n" +
-                    "Image: " +
-                    "${image.width}×${image.height}\n" +
-                    "TFLite input: " +
-                    "${engine.inputWidth}×" +
-                    "${engine.inputHeight}\n"
+            if (permissions.isNotEmpty()) {
+                permissionLauncher.launch(permissions.toTypedArray())
+                return
             }
-
-        } finally {
-
-            image.close()
         }
+
+        requestProjection()
     }
 
-    private fun scanForEsp32() {
-
-        if (
-            Build.VERSION.SDK_INT >= 31 &&
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_SCAN
-            ) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-
-            requestBlePermissions()
-            return
-        }
+    private fun requestProjection() {
 
         val manager =
-            getSystemService(
-                BluetoothManager::class.java
-            )
+            getSystemService(MEDIA_PROJECTION_SERVICE)
+                    as MediaProjectionManager
 
-        val adapter =
-            manager.adapter
-
-        if (adapter == null ||
-            !adapter.isEnabled
-        ) {
-
-            status.text =
-                "Bluetooth chưa bật"
-
-            return
-        }
-
-        status.text =
-            "BLE scan đang chạy..."
-
-        adapter.bluetoothLeScanner
-            .startScan(
-                object :
-                    android.bluetooth.le.ScanCallback() {
-
-                    override fun onScanResult(
-                        callbackType: Int,
-                        result:
-                        android.bluetooth.le.ScanResult
-                    ) {
-
-                        val device =
-                            result.device
-
-                        val name =
-                            try {
-                                device.name
-                            } catch (_: SecurityException) {
-                                null
-                            }
-
-                        if (
-                            name != null &&
-                            name.contains(
-                                "ScreenAI",
-                                true
-                            )
-                        ) {
-
-                            adapter.bluetoothLeScanner
-                                .stopScan(this)
-
-                            runOnUiThread {
-
-                                status.text =
-                                    "ESP32 found: $name"
-                            }
-
-                            ble.connect(device)
-                        }
-                    }
-                }
-            )
+        projectionLauncher.launch(
+            manager.createScreenCaptureIntent()
+        )
     }
 
-    private fun requestBlePermissions() {
+    private fun startCapture(data: Intent) {
 
-        if (
-            Build.VERSION.SDK_INT >= 31
-        ) {
-
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT
-                ),
-                700
-            )
+        val serviceIntent = Intent(
+            this,
+            ScreenCaptureService::class.java
+        ).apply {
+            putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, RESULT_OK)
+            putExtra(ScreenCaptureService.EXTRA_DATA, data)
         }
-    }
 
-    override fun onConnected() {
-
-        runOnUiThread {
-
-            status.append(
-                "\nBLE: CONNECTED"
-            )
-        }
-    }
-
-    override fun onDisconnected() {
-
-        runOnUiThread {
-
-            status.append(
-                "\nBLE: DISCONNECTED"
-            )
-        }
-    }
-
-    override fun onMessage(
-        message: String
-    ) {
-
-        runOnUiThread {
-
-            status.append(
-                "\nESP32 → Android:\n$message"
-            )
-        }
-    }
-
-    override fun onError(
-        message: String
-    ) {
-
-        runOnUiThread {
-
-            status.append(
-                "\nBLE ERROR:\n$message"
-            )
-        }
-    }
-
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
-
-        super.onActivityResult(
-            requestCode,
-            resultCode,
-            data
+        ContextCompat.startForegroundService(
+            this,
+            serviceIntent
         )
 
-        if (
-            requestCode ==
-            ScreenCaptureManager.REQUEST_CAPTURE &&
-            resultCode == RESULT_OK &&
-            data != null
-        ) {
+        toggleButton.text = "ON"
+        statusText.text = "ON • MediaProjection"
+    }
 
-            capture.start(
-                resultCode,
-                data
+    private fun turnOff() {
+
+        stopService(
+            Intent(
+                this,
+                ScreenCaptureService::class.java
             )
+        )
 
-            status.text =
-                "Screen capture STARTED"
-        }
+        setOff("OFF")
+    }
+
+    private fun setOff(message: String) {
+        toggleButton.text = "OFF"
+        statusText.text = message
     }
 
     override fun onDestroy() {
 
-        capture.stop()
-
-        ble.close()
-
-        engine.close()
-
         super.onDestroy()
     }
-    }
+}
