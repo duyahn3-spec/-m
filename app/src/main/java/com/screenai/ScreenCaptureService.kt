@@ -1,5 +1,6 @@
 package com.screenai
 
+import android.app.Activity.RESULT_OK
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
