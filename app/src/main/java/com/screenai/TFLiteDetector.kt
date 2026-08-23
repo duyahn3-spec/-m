@@ -405,12 +405,12 @@ class TFLiteDetector(
                 image.height
             )
 
-        bitmap.recycle()
-
-        return cropped
-    }
-
-    fun close() {
-        interpreter.close()
-    }
+        if (!bitmap.isRecycled) {
+    bitmap.recycle()
 }
+
+if (resized !== bitmap && !resized.isRecycled) {
+    resized.recycle()
+}
+
+return best
