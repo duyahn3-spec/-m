@@ -1,78 +1,64 @@
 package com.screenai
 
 import android.app.Activity
-import android.content.Intent
-import android.media.projection.MediaProjectionManager
+import android.graphics.Color
 import android.os.Bundle
-import android.widget.Button
+import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 
 class MainActivity : Activity() {
 
-    companion object {
-        private const val REQUEST_MEDIA_PROJECTION = 1001
-    }
-
-    private lateinit var statusText: TextView
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val layout = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
             setPadding(32, 32, 32, 32)
+            setBackgroundColor(Color.BLACK)
         }
 
-        statusText = TextView(this).apply {
-            text = "Screen AI\n\nSẵn sàng"
-            textSize = 18f
+        val title = TextView(this).apply {
+            text = "Screen AI Research"
+            textSize = 25f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
         }
 
-        val captureButton = Button(this).apply {
-            text = "Bắt đầu Screen Capture"
-            setOnClickListener {
-                requestScreenCapture()
-            }
+        val result = TextView(this).apply {
+            text = "Đang kiểm tra model..."
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            setPadding(0, 40, 0, 0)
         }
 
-        layout.addView(statusText)
-        layout.addView(captureButton)
+        root.addView(title)
 
-        setContentView(layout)
-    }
-
-    private fun requestScreenCapture() {
-        val manager =
-            getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-
-        val intent = manager.createScreenCaptureIntent()
-
-        startActivityForResult(
-            intent,
-            REQUEST_MEDIA_PROJECTION
+        root.addView(
+            result,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         )
-    }
 
-    @Deprecated("Deprecated in Android API")
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?
-    ) {
-        super.onActivityResult(requestCode, resultCode, data)
+        setContentView(root)
 
-        if (requestCode != REQUEST_MEDIA_PROJECTION) {
-            return
-        }
+        Thread {
+            try {
+                val info = ModelInspector.inspect(this)
+                val output = ModelInspector.format(info)
 
-        if (resultCode == RESULT_OK && data != null) {
-            statusText.text =
-                "Screen Capture permission: OK\n\n" +
-                "Bước tiếp theo: ImageReader"
-        } else {
-            statusText.text =
-                "Screen Capture permission bị từ chối."
-        }
+                runOnUiThread {
+                    result.text = output
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    result.text =
+                        "MODEL ERROR\n\n${e.stackTraceToString()}"
+                }
+            }
+        }.start()
     }
 }
