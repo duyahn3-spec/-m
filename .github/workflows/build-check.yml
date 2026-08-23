@@ -2,13 +2,11 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
       - master
-
-permissions:
-  contents: read
 
 jobs:
   build:
@@ -18,26 +16,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
+      - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
 
-      - name: Check Gradle
-        run: gradle --version
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Project structure
+        run: |
+          find . -maxdepth 6 -type f | sort
+          ls -lh app/src/main/assets/model.tflite
 
       - name: Build Debug APK
-        run: gradle assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: screen-ai-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: app-debug
+          path: '**/build/outputs/apk/**/*.apk'
