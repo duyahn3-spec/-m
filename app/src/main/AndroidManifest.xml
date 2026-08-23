@@ -2,9 +2,11 @@
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- BLE Android 11 and below -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 
+    <!-- BLE Android 12+ -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
@@ -13,9 +15,9 @@
 
     <application
         android:allowBackup="false"
-        android:label="Screen AI"
+        android:label="Screen AI Research"
         android:supportsRtl="true"
-        android:theme="@style/Theme.ScreenAI">
+        android:theme="@style/AppTheme">
 
         <activity
             android:name=".MainActivity"
