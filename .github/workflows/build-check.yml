@@ -1,52 +1,50 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+name: Build Android APK
 
-android {
-    namespace = "com.screenai"
-    compileSdk = 35
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
 
-    defaultConfig {
-        applicationId = "com.screenai"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 3
-        versionName = "3.0"
-    }
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            isShrinkResources = false
-        }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        debug {
-            isMinifyEnabled = false
-        }
-    }
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-    }
-}
+      - name: Show project
+        run: |
+          echo "===== PROJECT ====="
+          find . -maxdepth 5 -type f | sort
 
-dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.activity:activity-ktx:1.10.1")
+          echo "===== MODEL ====="
+          ls -lh app/src/main/assets/model.tflite
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+          echo "===== GRADLE ====="
+          ./gradlew --version
 
-    implementation("org.tensorflow:tensorflow-lite:2.17.0")
-}
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: '**/build/outputs/apk/**/*.apk'
