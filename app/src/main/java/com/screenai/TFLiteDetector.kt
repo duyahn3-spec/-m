@@ -237,9 +237,12 @@ class TFLiteDetector(
             }
         }
 
-        bitmap.recycle()
+        // ===== GIẢI PHÓNG BỘ NHỚ BITMAP VÀ RESIZED =====
+        if (!bitmap.isRecycled) {
+            bitmap.recycle()
+        }
 
-        if (resized !== bitmap) {
+        if (resized !== bitmap && !resized.isRecycled) {
             resized.recycle()
         }
 
@@ -406,11 +409,9 @@ class TFLiteDetector(
             )
 
         if (!bitmap.isRecycled) {
-    bitmap.recycle()
-}
+            bitmap.recycle()
+        }
 
-if (resized !== bitmap && !resized.isRecycled) {
-    resized.recycle()
+        return cropped
+    }
 }
-
-return best
