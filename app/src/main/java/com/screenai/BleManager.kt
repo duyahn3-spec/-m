@@ -2,252 +2,109 @@ package com.screenai
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCallback
-import android.bluetooth.BluetoothGattCharacteristic
-import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
-import java.util.UUID
 
 class BleManager(
     private val context: Context
 ) {
 
-    companion object {
+    private val bluetoothManager =
+        context.getSystemService(
+            Context.BLUETOOTH_SERVICE
+        ) as BluetoothManager
 
-        val SERVICE_UUID: UUID =
-            UUID.fromString(
-                "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-            )
+    private val adapter: BluetoothAdapter?
+        get() = bluetoothManager.adapter
 
-        val RX_UUID: UUID =
-            UUID.fromString(
-                "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-            )
-
-        val TX_UUID: UUID =
-            UUID.fromString(
-                "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
-            )
-
-        val CCCD_UUID: UUID =
-            UUID.fromString(
-                "00002902-0000-1000-8000-00805f9b34fb"
-            )
-    }
-
-    interface Listener {
-
-        fun onConnected()
-
-        fun onDisconnected()
-
-        fun onMessage(message: String)
-
-        fun onError(message: String)
-    }
-
-    var listener: Listener? = null
-
-    private var gatt: BluetoothGatt? = null
-
-    private var rxCharacteristic:
-        BluetoothGattCharacteristic? = null
-
-    fun connect(device: BluetoothDevice) {
-
-        if (!hasConnectPermission()) {
-
-            listener?.onError(
-                "Thiếu BLUETOOTH_CONNECT permission"
-            )
-
-            return
-        }
-
-        gatt?.close()
-
-        gatt = device.connectGatt(
-            context,
-            false,
-            callback,
-            BluetoothDevice.TRANSPORT_LE
-        )
-    }
-
-    fun send(message: String) {
-
-        val g = gatt
-        val characteristic = rxCharacteristic
-
-        if (g == null || characteristic == null) {
-
-            listener?.onError(
-                "BLE chưa connected"
-            )
-
-            return
-        }
-
-        if (!hasConnectPermission()) {
-            return
-        }
-
-        characteristic.writeType =
-            BluetoothGattCharacteristic
-                .WRITE_TYPE_DEFAULT
-
-        characteristic.value =
-            message.toByteArray(Charsets.UTF_8)
-
-        g.writeCharacteristic(characteristic)
-    }
+    private var scanning = false
 
     private val callback =
-        object : BluetoothGattCallback() {
+        object : ScanCallback() {
 
-            override fun onConnectionStateChange(
-                gatt: BluetoothGatt,
-                status: Int,
-                newState: Int
+            override fun onScanResult(
+                callbackType: Int,
+                result: ScanResult
             ) {
 
-                if (newState ==
-                    android.bluetooth.BluetoothProfile.STATE_CONNECTED
-                ) {
-
-                    this@BleManager.gatt = gatt
-
-                    if (hasConnectPermission()) {
-                        gatt.discoverServices()
-                    }
-
-                    listener?.onConnected()
-
-                } else {
-
-                    listener?.onDisconnected()
-                }
+                /*
+                 * Chỉ phát hiện thiết bị.
+                 *
+                 * Không tự động gửi dữ liệu
+                 * cho thiết bị chưa được chọn/kết nối.
+                 */
             }
 
-            override fun onServicesDiscovered(
-                gatt: BluetoothGatt,
-                status: Int
+            override fun onScanFailed(
+                errorCode: Int
             ) {
-
-                if (status !=
-                    BluetoothGatt.GATT_SUCCESS
-                ) {
-                    listener?.onError(
-                        "GATT service discovery failed"
-                    )
-                    return
-                }
-
-                val service =
-                    gatt.getService(SERVICE_UUID)
-
-                if (service == null) {
-
-                    listener?.onError(
-                        "Không tìm thấy service"
-                    )
-
-                    return
-                }
-
-                rxCharacteristic =
-                    service.getCharacteristic(RX_UUID)
-
-                val tx =
-                    service.getCharacteristic(TX_UUID)
-
-                if (tx != null &&
-                    hasConnectPermission()
-                ) {
-
-                    gatt.setCharacteristicNotification(
-                        tx,
-                        true
-                    )
-
-                    val descriptor =
-                        tx.getDescriptor(CCCD_UUID)
-
-                    descriptor?.value =
-                        BluetoothGattDescriptor
-                            .ENABLE_NOTIFICATION_VALUE
-
-                    if (descriptor != null) {
-                        gatt.writeDescriptor(descriptor)
-                    }
-                }
-            }
-
-            override fun onCharacteristicChanged(
-                gatt: BluetoothGatt,
-                characteristic:
-                BluetoothGattCharacteristic
-            ) {
-
-                if (characteristic.uuid == TX_UUID) {
-
-                    val text =
-                        characteristic.value
-                            .toString(Charsets.UTF_8)
-
-                    listener?.onMessage(text)
-                }
-            }
-
-            @Suppress("DEPRECATION")
-            override fun onCharacteristicChanged(
-                gatt: BluetoothGatt,
-                characteristic:
-                BluetoothGattCharacteristic,
-                value: ByteArray
-            ) {
-
-                if (characteristic.uuid == TX_UUID) {
-
-                    listener?.onMessage(
-                        value.toString(
-                            Charsets.UTF_8
-                        )
-                    )
-                }
+                scanning = false
             }
         }
 
-    private fun hasConnectPermission(): Boolean {
+    fun start() {
 
-        return if (
-            android.os.Build.VERSION.SDK_INT >= 31
-        ) {
-
+        if (
             ContextCompat.checkSelfPermission(
                 context,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ) == PackageManager.PERMISSION_GRANTED
-
-        } else {
-            true
+                Manifest.permission.BLUETOOTH_SCAN
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
         }
+
+        val scanner =
+            adapter?.bluetoothLeScanner
+                ?: return
+
+        if (scanning) return
+
+        scanner.startScan(callback)
+
+        scanning = true
     }
 
-    fun close() {
+    fun sendTelemetry(
+        target: TrackedTarget
+    ) {
 
-        if (hasConnectPermission()) {
-            gatt?.disconnect()
+        /*
+         * Ở đây sẽ gửi:
+         *
+         * X
+         * Y
+         * DX
+         * DY
+         * confidence
+         *
+         * qua characteristic GATT của ESP32.
+         *
+         * Chưa hard-code UUID vì firmware
+         * ESP32-C3 của bạn chưa được cung cấp.
+         */
+    }
+
+    fun stop() {
+
+        if (
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.BLUETOOTH_SCAN
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
         }
 
-        gatt?.close()
+        if (!scanning) return
 
-        gatt = null
-        rxCharacteristic = null
+        adapter
+            ?.bluetoothLeScanner
+            ?.stopScan(callback)
+
+        scanning = false
     }
 }
