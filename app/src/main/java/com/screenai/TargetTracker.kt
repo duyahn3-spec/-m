@@ -1,7 +1,5 @@
 package com.screenai
 
-import kotlin.math.abs
-
 data class Detection(
     val x: Float,
     val y: Float,
@@ -20,8 +18,8 @@ data class TrackedTarget(
 
 class TargetTracker {
 
-    private var previousX = 0f
-    private var previousY = 0f
+    private var x = 0f
+    private var y = 0f
 
     private var initialized = false
 
@@ -31,55 +29,40 @@ class TargetTracker {
 
         if (!initialized) {
 
-            previousX = detection.x
-            previousY = detection.y
+            x = detection.x
+            y = detection.y
 
             initialized = true
 
             return TrackedTarget(
-                x = detection.x,
-                y = detection.y,
-                dx = 0f,
-                dy = 0f,
-                confidence = detection.confidence
+                x,
+                y,
+                0f,
+                0f,
+                detection.confidence
             )
         }
 
-        val rawDx =
-            detection.x - previousX
+        val oldX = x
+        val oldY = y
 
-        val rawDy =
-            detection.y - previousY
+        val alpha = 0.70f
 
-        /*
-         * Lightweight smoothing.
-         */
+        x +=
+            (detection.x - x) *
+                    alpha
 
-        val alpha = 0.65f
-
-        val newX =
-            previousX +
-                    rawDx * alpha
-
-        val newY =
-            previousY +
-                    rawDy * alpha
-
-        val dx =
-            newX - previousX
-
-        val dy =
-            newY - previousY
-
-        previousX = newX
-        previousY = newY
+        y +=
+            (detection.y - y) *
+                    alpha
 
         return TrackedTarget(
-            x = newX,
-            y = newY,
-            dx = dx,
-            dy = dy,
-            confidence = detection.confidence
+            x = x,
+            y = y,
+            dx = x - oldX,
+            dy = y - oldY,
+            confidence =
+                detection.confidence
         )
     }
 }
