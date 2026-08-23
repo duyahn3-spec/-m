@@ -3,13 +3,13 @@
 <resources>
 
     <style
-        name="Theme.ScreenAI"
+        name="AppTheme"
         parent="android:style/Theme.Material.Light.NoActionBar">
 
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">#FFFFFF</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:colorAccent">#2196F3</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
 
     </style>
 
