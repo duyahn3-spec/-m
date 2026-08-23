@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.os.Handler
@@ -15,15 +16,26 @@ class ScreenCaptureEngine(
     private val projection: MediaProjection
 ) {
 
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    private var display:
+        VirtualDisplay? = null
 
-    private var workerThread: HandlerThread? = null
-    private var workerHandler: Handler? = null
+    private var reader:
+        ImageReader? = null
 
-    private var detector: TFLiteDetector? = null
-    private var tracker: TargetTracker? = null
-    private var ble: BleManager? = null
+    private var thread:
+        HandlerThread? = null
+
+    private var handler:
+        Handler? = null
+
+    private var detector:
+        TFLiteDetector? = null
+
+    private var tracker:
+        TargetTracker? = null
+
+    private var ble:
+        BleManager? = null
 
     @Volatile
     private var running = false
@@ -38,7 +50,9 @@ class ScreenCaptureEngine(
 
     fun start() {
 
-        if (running) return
+        if (running) {
+            return
+        }
 
         running = true
 
@@ -49,16 +63,16 @@ class ScreenCaptureEngine(
             )
         )
 
-        workerThread =
+        thread =
             HandlerThread(
-                "ScreenAI-Capture"
+                "ScreenAI"
             ).also {
                 it.start()
             }
 
-        workerHandler =
+        handler =
             Handler(
-                workerThread!!.looper
+                thread!!.looper
             )
 
         detector =
@@ -76,126 +90,138 @@ class ScreenCaptureEngine(
 
         ble?.start()
 
-        startCapture()
+        startProjection()
     }
 
-    private fun startCapture() {
-
-        val wm =
-            context.getSystemService(
-                Context.WINDOW_SERVICE
-            ) as WindowManager
+    private fun startProjection() {
 
         val metrics =
             context.resources.displayMetrics
 
-        val width =
+        val screenWidth =
             metrics.widthPixels
 
-        val height =
+        val screenHeight =
             metrics.heightPixels
 
         val density =
             metrics.densityDpi
 
         /*
-         * Không encode video.
-         * ImageReader chỉ giữ tối đa 2 frame.
+         * ImageReader chỉ giữ 2 ảnh.
+         *
+         * Khi frame mới đến,
+         * acquireLatestImage() bỏ frame cũ
+         * để không tạo backlog.
          */
 
-        imageReader =
+        reader =
             ImageReader.newInstance(
-                width,
-                height,
+                screenWidth,
+                screenHeight,
                 PixelFormat.RGBA_8888,
                 2
             )
 
-        imageReader?.setOnImageAvailableListener(
-            { reader ->
+        reader?.setOnImageAvailableListener(
+            { imageReader ->
 
-                if (!running) return@setOnImageAvailableListener
+                if (!running) {
+                    return@setOnImageAvailableListener
+                }
 
                 /*
-                 * acquireLatestImage:
-                 * luôn ưu tiên frame mới nhất,
-                 * tránh backlog và latency tăng dần.
+                 * LẤY FRAME MỚI NHẤT.
                  */
 
                 val image =
-                    reader.acquireLatestImage()
+                    imageReader.acquireLatestImage()
                         ?: return@setOnImageAvailableListener
 
-                workerHandler?.post {
+                try {
 
-                    try {
+                    processImage(
+                        image
+                    )
 
-                        processFrame(image)
+                } catch (
+                    _: Throwable
+                ) {
 
-                    } finally {
+                    /*
+                     * Không để một frame lỗi
+                     * làm chết toàn bộ service.
+                     */
 
-                        image.close()
-                    }
+                } finally {
+
+                    image.close()
                 }
 
             },
-            workerHandler
+            handler
         )
 
-        virtualDisplay =
+        display =
             projection.createVirtualDisplay(
                 "ScreenAI",
-                width,
-                height,
+                screenWidth,
+                screenHeight,
                 density,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader!!.surface,
+
+                DisplayManager
+                    .VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+
+                reader!!.surface,
+
                 null,
-                workerHandler
+                handler
             )
     }
 
-    private fun processFrame(
-        image: android.media.Image
+    private fun processImage(
+        image: Image
     ) {
 
-        val result =
+        val detection =
             detector?.detect(
                 image
-            )
+            ) ?: return
 
-        if (result == null) {
-            return
-        }
-
-        val tracked =
+        val target =
             tracker?.update(
-                result
+                detection
             ) ?: return
 
         ble?.sendTelemetry(
-            tracked
+            target
         )
     }
 
     fun stop() {
 
-        if (!running) return
+        if (!running) {
+            return
+        }
 
         running = false
 
         try {
+
             projection.unregisterCallback(
                 projectionCallback
             )
-        } catch (_: Exception) {
+
+        } catch (
+            _: Throwable
+        ) {
         }
 
-        virtualDisplay?.release()
-        virtualDisplay = null
+        display?.release()
+        display = null
 
-        imageReader?.close()
-        imageReader = null
+        reader?.close()
+        reader = null
 
         detector?.close()
         detector = null
@@ -203,11 +229,18 @@ class ScreenCaptureEngine(
         ble?.stop()
         ble = null
 
-        workerThread?.quitSafely()
+        thread?.quitSafely()
 
-        workerThread = null
-        workerHandler = null
+        thread = null
+        handler = null
 
-        projection.stop()
+        try {
+
+            projection.stop()
+
+        } catch (
+            _: Throwable
+        ) {
+        }
     }
 }
